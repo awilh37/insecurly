@@ -1,1 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insecurly - Web Proxy</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1400px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .sidebar {
+            width: 300px;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .browser-container {
+            flex: 1;
+            min-width: 600px;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f0f0f0;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #ccc;
+            transition: background 0.3s;
+        }
+
+        .status-dot.connected {
+            background: #4caf50;
+        }
+
+        .status-dot.disconnected {
+            background: #f44336;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+            flex-direction: column;
+        }
+
+        label {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            padding: 10px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        button.secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .toolbar button {
+            flex: 1;
+            min-width: 80px;
+            padding: 8px 12px;
+            font-size: 13px;
+        }
+
+        .url-bar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .url-bar input {
+            flex: 1;
+        }
+
+        .url-bar button {
+            padding: 8px 12px;
+            min-width: auto;
+        }
+
+        #viewport {
+            width: 100%;
+            height: 600px;
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        #viewport img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .viewport-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+            display: none;
+        }
+
+        .viewport-overlay.active {
+            display: block;
+        }
+
+        .error-message {
+            padding: 12px;
+            background: #ffebee;
+            color: #c62828;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .success-message {
+            padding: 12px;
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .success-message.show {
+            display: block;
+        }
+
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f0f0f0;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: #999;
+            text-transform: uppercase;
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 1024px) {
+            .container {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+            }
+
+            .browser-container {
+                min-width: auto;
+            }
+
+            #viewport {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div>
+                <h1>Insecurly</h1>
+                <div class="status-indicator">
+                    <div class="status-dot disconnected" id="statusDot"></div>
+                    <span id="statusText">Disconnected</span>
+                </div>
+            </div>
+
+            <div class="error-message" id="errorMessage"></div>
+            <div class="success-message" id="successMessage"></div>
+
+            <div class="input-group" id="authSection">
+                <label>Register / Connect</label>
+                <button id="connectBtn" onclick="connectToServer()">Connect to Server</button>
+            </div>
+
+            <div class="input-group" style="display: none;" id="launchSection">
+                <div class="section-title">Launch Browser</div>
+                <label>Enter Website URL</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="urlInput" placeholder="google.com" value="google.com">
+                    <button onclick="launchBrowser()" style="min-width: auto; padding: 10px 16px;">Go</button>
+                </div>
+            </div>
+
+            <div class="input-group" style="display: none;" id="interactionSection">
+                <div class="section-title">Interaction</div>
+                <label>Click Coordinates</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="clickX" placeholder="X" style="width: 50%;">
+                    <input type="text" id="clickY" placeholder="Y" style="width: 50%;">
+                    <button onclick="clickPage()" style="min-width: auto;">Click</button>
+                </div>
+
+                <label>Type Text</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="typeInput" placeholder="Text to type" style="flex: 1;">
+                    <button onclick="typePage()" style="min-width: auto;">Type</button>
+                </div>
+
+                <label>Scroll (X, Y)</label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="scrollX" placeholder="X" style="width: 50%;">
+                    <input type="text" id="scrollY" placeholder="Y" style="width: 50%;">
+                    <button onclick="scrollPage()" style="min-width: auto;">Scroll</button>
+                </div>
+            </div>
+
+            <div style="display: none;" id="browserSection">
+                <div class="section-title">Browser Controls</div>
+                <div class="toolbar">
+                    <button class="secondary" onclick="goBack()" title="Back">← Back</button>
+                    <button class="secondary" onclick="goForward()" title="Forward">Forward →</button>
+                    <button class="secondary" onclick="refreshPage()" title="Refresh">⟳ Refresh</button>
+                </div>
+                <button onclick="closeBrowser()" style="width: 100%; margin-top: 10px;">Close Browser</button>
+            </div>
+        </div>
+
+        <div class="browser-container">
+            <div class="url-bar">
+                <input type="text" id="addressBar" placeholder="https://example.com" disabled>
+                <button onclick="navigateTo()" style="min-width: auto; padding: 8px 12px;">Navigate</button>
+            </div>
+
+            <div class="toolbar">
+                <button class="secondary" onclick="requestScreenshot()" style="flex: 1;">📸 Screenshot</button>
+            </div>
+
+            <div id="viewport">
+                <span style="color: #ccc; font-size: 18px;">Browser viewport will appear here</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        const SERVER_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:3002' 
+            : 'https://your-server-url.com';
+
+        let socket = null;
+        let isConnected = false;
+        let browserActive = false;
+        let token = null;
+
+        function updateStatus(connected) {
+            isConnected = connected;
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            
+            if (connected) {
+                dot.classList.remove('disconnected');
+                dot.classList.add('connected');
+                text.textContent = 'Connected';
+            } else {
+                dot.classList.remove('connected');
+                dot.classList.add('disconnected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+            setTimeout(() => errorDiv.classList.remove('show'), 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.classList.add('show');
+            setTimeout(() => successDiv.classList.remove('show'), 3000);
+        }
+
+        function connectToServer() {
+            socket = io(SERVER_URL, {
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                reconnectionAttempts: 5
+            });
+
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                // Request authentication from server
+                fetch(`${SERVER_URL}/auth/register`, { method: 'POST' })
+                    .then(res => res.json())
+                    .then(data => {
+                        token = data.token;
+                        socket.emit('authenticate', { token });
+                    })
+                    .catch(err => {
+                        console.error('Auth error:', err);
+                        showError('Failed to authenticate with server');
+                    });
+            });
+
+            socket.on('authenticated', () => {
+                updateStatus(true);
+                showSuccess('Connected to server!');
+                document.getElementById('authSection').style.display = 'none';
+                document.getElementById('launchSection').style.display = 'flex';
+            });
+
+            socket.on('browser-launched', (data) => {
+                showSuccess(`Browser launched: ${data.url}`);
+                browserActive = true;
+                document.getElementById('interactionSection').style.display = 'flex';
+                document.getElementById('browserSection').style.display = 'block';
+                document.getElementById('addressBar').value = data.url;
+            });
+
+            socket.on('screenshot', (data) => {
+                const viewport = document.getElementById('viewport');
+                viewport.innerHTML = `<img src="data:image/png;base64,${data.image}" alt="Browser screenshot">`;
+            });
+
+            socket.on('error', (data) => {
+                showError(`Server error: ${data.message}`);
+            });
+
+            socket.on('disconnect', () => {
+                updateStatus(false);
+                browserActive = false;
+                document.getElementById('authSection').style.display = 'flex';
+                document.getElementById('launchSection').style.display = 'none';
+                document.getElementById('interactionSection').style.display = 'none';
+                document.getElementById('browserSection').style.display = 'none';
+            });
+        }
+
+        function launchBrowser() {
+            if (!isConnected) {
+                showError('Not connected to server');
+                return;
+            }
+
+            const url = document.getElementById('urlInput').value;
+            if (!url) {
+                showError('Please enter a URL');
+                return;
+            }
+
+            socket.emit('launch-browser', { url });
+        }
+
+        function navigateTo() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            const url = document.getElementById('addressBar').value;
+            if (!url) {
+                showError('Please enter a URL');
+                return;
+            }
+
+            socket.emit('navigate', { url });
+        }
+
+        function clickPage() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            const x = parseInt(document.getElementById('clickX').value);
+            const y = parseInt(document.getElementById('clickY').value);
+
+            if (isNaN(x) || isNaN(y)) {
+                showError('Please enter valid coordinates');
+                return;
+            }
+
+            socket.emit('click', { x, y });
+        }
+
+        function typePage() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            const text = document.getElementById('typeInput').value;
+            if (!text) {
+                showError('Please enter text to type');
+                return;
+            }
+
+            socket.emit('type', { text });
+            document.getElementById('typeInput').value = '';
+        }
+
+        function scrollPage() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            const x = parseInt(document.getElementById('scrollX').value) || 0;
+            const y = parseInt(document.getElementById('scrollY').value) || 0;
+
+            socket.emit('scroll', { x, y });
+        }
+
+        function goBack() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            socket.emit('back');
+        }
+
+        function goForward() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            socket.emit('forward');
+        }
+
+        function refreshPage() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            requestScreenshot();
+        }
+
+        function requestScreenshot() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            socket.emit('screenshot');
+        }
+
+        function closeBrowser() {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            socket.emit('close-browser');
+            browserActive = false;
+            document.getElementById('interactionSection').style.display = 'none';
+            document.getElementById('browserSection').style.display = 'none';
+            document.getElementById('viewport').innerHTML = '<span style="color: #ccc; font-size: 18px;">Browser closed</span>';
+            showSuccess('Browser closed');
+        }
+
+        // Initialize
+        updateStatus(false);
+    </script>
+</body>
+</html>
