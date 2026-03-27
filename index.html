@@ -816,7 +816,128 @@
             }
         }
 
-        // Track mouse position and show cursor
+        // Global keyboard event handler for remote desktop
+        document.addEventListener('keydown', (event) => {
+            if (!browserActive || !socket || !socket.connected) return;
+            
+            // Don't capture keys meant for UI (F12, Ctrl+Shift+I, etc.)
+            if (event.key === 'F12' || (event.ctrlKey && event.shiftKey && event.key === 'I')) {
+                return;
+            }
+            
+            const key = event.key;
+            const keyCode = event.code;
+            
+            console.log(`[KEYBOARD] Key down: ${key} (${keyCode})`);
+            
+            // Send keyboard event to server
+            socket.emit('keyboard', {
+                type: 'keydown',
+                key,
+                keyCode,
+                ctrlKey: event.ctrlKey,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                metaKey: event.metaKey
+            });
+            
+            event.preventDefault();
+        }, true);
+
+        document.addEventListener('keyup', (event) => {
+            if (!browserActive || !socket || !socket.connected) return;
+            if (event.key === 'F12' || (event.ctrlKey && event.shiftKey && event.key === 'I')) {
+                return;
+            }
+            
+            const key = event.key;
+            const keyCode = event.code;
+            
+            socket.emit('keyboard', {
+                type: 'keyup',
+                key,
+                keyCode,
+                ctrlKey: event.ctrlKey,
+                shiftKey: event.shiftKey,
+                altKey: event.altKey,
+                metaKey: event.metaKey
+            });
+            
+            event.preventDefault();
+        }, true);
+
+        // Scroll handling for viewport
+        document.addEventListener('wheel', (event) => {
+            if (!browserActive || !socket || !socket.connected) return;
+            
+            const viewport = document.getElementById('viewport');
+            const img = viewport.querySelector('img');
+            
+            if (!img) return;
+            
+            const rect = img.getBoundingClientRect();
+            
+            // Check if scrolling over the viewport
+            if (event.clientX >= rect.left && event.clientX <= rect.right &&
+                event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                
+                console.log(`[SCROLL] X: ${event.deltaX}, Y: ${event.deltaY}`);
+                
+                // Send scroll to server
+                socket.emit('scroll', {
+                    x: Math.round(event.deltaX),
+                    y: Math.round(event.deltaY)
+                });
+                
+                event.preventDefault();
+            }
+        }, true);
+
+        // Handle double-click
+        document.addEventListener('dblclick', (event) => {
+            if (!browserActive || !socket || !socket.connected) return;
+            
+            const viewport = document.getElementById('viewport');
+            const img = viewport.querySelector('img');
+            
+            if (!img) return;
+            
+            const rect = img.getBoundingClientRect();
+            
+            if (event.clientX >= rect.left && event.clientX <= rect.right &&
+                event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                
+                const x = Math.round(((event.clientX - rect.left) / rect.width) * img.naturalWidth);
+                const y = Math.round(((event.clientY - rect.top) / rect.height) * img.naturalHeight);
+                
+                console.log(`[DOUBLE-CLICK] at (${x}, ${y})`);
+                socket.emit('dblclick', { x, y });
+                event.preventDefault();
+            }
+        }, true);
+
+        // Handle right-click
+        document.addEventListener('contextmenu', (event) => {
+            if (!browserActive || !socket || !socket.connected) return;
+            
+            const viewport = document.getElementById('viewport');
+            const img = viewport.querySelector('img');
+            
+            if (!img) return;
+            
+            const rect = img.getBoundingClientRect();
+            
+            if (event.clientX >= rect.left && event.clientX <= rect.right &&
+                event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                
+                const x = Math.round(((event.clientX - rect.left) / rect.width) * img.naturalWidth);
+                const y = Math.round(((event.clientY - rect.top) / rect.height) * img.naturalHeight);
+                
+                console.log(`[RIGHT-CLICK] at (${x}, ${y})`);
+                socket.emit('rightclick', { x, y });
+                event.preventDefault();
+            }
+        }, true);
         document.addEventListener('mousemove', (event) => {
             if (!browserActive) return;
             
