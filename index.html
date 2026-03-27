@@ -182,12 +182,44 @@
             align-items: center;
             justify-content: center;
             position: relative;
+            cursor: pointer;
+        }
+
+        #viewport-wrapper {
+            position: relative;
+            display: inline-block;
         }
 
         #viewport img {
             max-width: 100%;
             max-height: 100%;
             object-fit: contain;
+            display: block;
+            user-select: none;
+        }
+
+        #viewport-cursor {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #667eea;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 0 0 1px rgba(102, 126, 234, 0.5);
+        }
+
+        #viewport-cursor::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 4px;
+            background: #667eea;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
         }
 
         .viewport-overlay {
@@ -196,7 +228,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            cursor: crosshair;
+            cursor: pointer;
             display: none;
         }
 
@@ -471,7 +503,10 @@
             </div>
 
             <div id="viewport">
-                <span style="color: #ccc; font-size: 18px;">Browser viewport will appear here</span>
+                <div id="viewport-wrapper" style="position: relative; display: inline-block;">
+                    <span style="color: #ccc; font-size: 18px;">Browser viewport will appear here</span>
+                </div>
+                <div id="viewport-cursor"></div>
             </div>
         </div>
     </div>
@@ -583,6 +618,7 @@
                 console.log(`[BROWSER] Browser launched: ${data.url}`);
                 showSuccess(`Browser launched: ${data.url}`);
                 browserActive = true;
+                startScreenshotRefresh();
                 document.getElementById('interactionSection').style.display = 'flex';
                 document.getElementById('browserSection').style.display = 'block';
                 document.getElementById('addressBar').value = data.url;
@@ -591,7 +627,21 @@
             socket.on('screenshot', (data) => {
                 console.log('[BROWSER] Screenshot received');
                 const viewport = document.getElementById('viewport');
-                viewport.innerHTML = `<img src="data:image/png;base64,${data.image}" alt="Browser screenshot">`;
+                const wrapper = document.getElementById('viewport-wrapper');
+                
+                // Create or update image
+                let img = wrapper.querySelector('img');
+                if (!img) {
+                    img = document.createElement('img');
+                    img.style.display = 'block';
+                    img.style.userSelect = 'none';
+                    wrapper.innerHTML = '';
+                    wrapper.appendChild(img);
+                }
+                img.src = `data:image/png;base64,${data.image}`;
+                
+                // Attach click handler to image
+                img.onclick = (e) => handleViewportClick(e, img);
             });
 
             socket.on('error', (data) => {
@@ -608,6 +658,7 @@
                 console.log('[SOCKET] Disconnected from server');
                 updateStatus(false);
                 browserActive = false;
+                stopScreenshotRefresh();
                 document.getElementById('authSection').style.display = 'flex';
                 document.getElementById('launchSection').style.display = 'none';
                 document.getElementById('interactionSection').style.display = 'none';
@@ -734,11 +785,97 @@
 
             socket.emit('close-browser');
             browserActive = false;
+            stopScreenshotRefresh();
             document.getElementById('interactionSection').style.display = 'none';
             document.getElementById('browserSection').style.display = 'none';
-            document.getElementById('viewport').innerHTML = '<span style="color: #ccc; font-size: 18px;">Browser closed</span>';
+            document.getElementById('viewport').innerHTML = '<div id="viewport-wrapper"><span style="color: #ccc; font-size: 18px;">Browser closed</span></div>';
             showSuccess('Browser closed');
         }
+
+        // Viewport click handler - convert click to browser coordinates
+        function handleViewportClick(event, imgElement) {
+            if (!browserActive) {
+                showError('No active browser');
+                return;
+            }
+
+            // Get image dimensions and position
+            const rect = imgElement.getBoundingClientRect();
+            const imgWidth = imgElement.naturalWidth || imgElement.width;
+            const imgHeight = imgElement.naturalHeight || imgElement.height;
+            
+            // Calculate click position relative to browser viewport
+            const x = Math.round(((event.clientX - rect.left) / rect.width) * imgWidth);
+            const y = Math.round(((event.clientY - rect.top) / rect.height) * imgHeight);
+            
+            console.log(`[CLICK] User clicked at (${x}, ${y})`);
+            
+            // Send click to server
+            if (socket && socket.connected) {
+                socket.emit('click', { x, y });
+            }
+        }
+
+        // Track mouse position and show cursor
+        document.addEventListener('mousemove', (event) => {
+            if (!browserActive) return;
+            
+            const viewport = document.getElementById('viewport');
+            const img = viewport.querySelector('img');
+            
+            if (!img) return;
+            
+            const rect = img.getBoundingClientRect();
+            
+            // Check if mouse is over the image
+            if (event.clientX >= rect.left && event.clientX <= rect.right &&
+                event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                
+                const cursor = document.getElementById('viewport-cursor');
+                cursor.style.display = 'block';
+                cursor.style.left = (event.clientX - rect.left - 10) + 'px';
+                cursor.style.top = (event.clientY - rect.top - 10) + 'px';
+            } else {
+                document.getElementById('viewport-cursor').style.display = 'none';
+            }
+        });
+
+        // Auto-refresh screenshot every 500ms when browser is active
+        let screenshotInterval = null;
+        
+        function startScreenshotRefresh() {
+            if (screenshotInterval) clearInterval(screenshotInterval);
+            screenshotInterval = setInterval(() => {
+                if (browserActive && socket && socket.connected) {
+                    socket.emit('screenshot');
+                }
+            }, 500);
+            console.log('[AUTO-REFRESH] Screenshot refresh started (500ms)');
+        }
+
+        function stopScreenshotRefresh() {
+            if (screenshotInterval) {
+                clearInterval(screenshotInterval);
+                screenshotInterval = null;
+                console.log('[AUTO-REFRESH] Screenshot refresh stopped');
+            }
+        }
+
+        // Update browser activation to control refresh
+        const originalBrowserActive = browserActive;
+        Object.defineProperty(window, 'browserActiveState', {
+            get() {
+                return browserActive;
+            },
+            set(value) {
+                browserActive = value;
+                if (value) {
+                    startScreenshotRefresh();
+                } else {
+                    stopScreenshotRefresh();
+                }
+            }
+        });
 
         // Initialize
         console.log('[PAGE] Insecurly frontend loaded');
