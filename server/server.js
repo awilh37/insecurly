@@ -9,14 +9,42 @@ const SessionManager = require('./sessionManager');
 
 const app = express();
 const server = http.createServer(app);
+
+// Dynamic CORS configuration
+const getAllowedOrigins = () => {
+  const origins = [
+    'https://awilh37.github.io',
+    'https://rand0m.tplinkdns.com'
+  ];
+  
+  // Add localhost variants for development
+  for (let port = 3000; port <= 3010; port++) {
+    origins.push(`http://localhost:${port}`);
+    origins.push(`http://127.0.0.1:${port}`);
+  }
+  
+  return origins;
+};
+
 const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || ['http://localhost:3000', 'https://awilh37.github.io'],
-    methods: ['GET', 'POST']
+    origin: (origin, callback) => {
+      const allowedOrigins = getAllowedOrigins();
+      console.log(`[CORS] Checking origin: ${origin}`);
+      if (!origin || allowedOrigins.includes(origin)) {
+        console.log(`[CORS] Origin accepted: ${origin}`);
+        callback(null, true);
+      } else {
+        console.log(`[CORS] Origin rejected: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3002;
 const browserManager = new BrowserManager();
 const sessionManager = new SessionManager();
 
@@ -25,9 +53,18 @@ app.use(express.json());
 
 // CORS headers
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', process.env.FRONTEND_URL || 'https://awilh37.github.io');
+  const origin = req.headers.origin;
+  const allowedOrigins = getAllowedOrigins();
+  
+  console.log(`[HTTP] Request from origin: ${origin}`);
+  
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   next();
 });
 
@@ -235,6 +272,7 @@ async function sendScreenshot(socket, browserId) {
 
 server.listen(PORT, () => {
   console.log(`Insecurly server running on port ${PORT}`);
+  console.log(`Allowed origins: https://awilh37.github.io, https://rand0m.tplinkdns.com, http://localhost:3000-3010`);
 });
 
 process.on('SIGINT', async () => {

@@ -478,9 +478,23 @@
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <script>
-        const SERVER_URL = window.location.hostname === 'localhost' 
-            ? 'http://localhost:3002' 
-            : 'https://randm0m.tplinkdns.com/insecurly/';
+        const SERVER_URL = (() => {
+            const hostname = window.location.hostname;
+            console.log(`[INIT] Current hostname: ${hostname}`);
+            
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                console.log(`[INIT] Using localhost server at http://localhost:3002`);
+                return 'http://localhost:3002';
+            } else if (hostname === 'awilh37.github.io') {
+                console.log(`[INIT] Using production server at https://rand0m.tplinkdns.com`);
+                return 'https://rand0m.tplinkdns.com';
+            } else {
+                console.log(`[INIT] Using fallback server at http://${hostname}:3002`);
+                return `http://${hostname}:3002`;
+            }
+        })();
+
+        console.log(`[INIT] SERVER_URL set to: ${SERVER_URL}`);
 
         let socket = null;
         let isConnected = false;
@@ -504,6 +518,7 @@
         }
 
         function showError(message) {
+            console.error(`[ERROR] ${message}`);
             const errorDiv = document.getElementById('errorMessage');
             errorDiv.textContent = message;
             errorDiv.classList.add('show');
@@ -511,6 +526,7 @@
         }
 
         function showSuccess(message) {
+            console.log(`[SUCCESS] ${message}`);
             const successDiv = document.getElementById('successMessage');
             successDiv.textContent = message;
             successDiv.classList.add('show');
@@ -518,36 +534,53 @@
         }
 
         function connectToServer() {
+            console.log(`[SOCKET] Attempting to connect to ${SERVER_URL}`);
+            
             socket = io(SERVER_URL, {
                 reconnection: true,
                 reconnectionDelay: 1000,
                 reconnectionDelayMax: 5000,
-                reconnectionAttempts: 5
+                reconnectionAttempts: 5,
+                transports: ['websocket', 'polling']
             });
 
             socket.on('connect', () => {
-                console.log('Connected to server');
+                console.log(`[SOCKET] Successfully connected. Socket ID: ${socket.id}`);
+                showSuccess('Connected to server!');
+                
                 // Request authentication from server
-                fetch(`${SERVER_URL}/auth/register`, { method: 'POST' })
-                    .then(res => res.json())
+                console.log('[AUTH] Requesting authentication token...');
+                fetch(`${SERVER_URL}/auth/register`, { 
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                    .then(res => {
+                        console.log(`[AUTH] Auth response status: ${res.status}`);
+                        return res.json();
+                    })
                     .then(data => {
+                        console.log(`[AUTH] Received token: ${data.token.substring(0, 10)}...`);
                         token = data.token;
                         socket.emit('authenticate', { token });
                     })
                     .catch(err => {
-                        console.error('Auth error:', err);
-                        showError('Failed to authenticate with server');
+                        console.error(`[AUTH ERROR] Failed to get token:`, err);
+                        showError('Failed to authenticate with server: ' + err.message);
                     });
             });
 
             socket.on('authenticated', () => {
+                console.log('[SOCKET] Authenticated successfully');
                 updateStatus(true);
-                showSuccess('Connected to server!');
+                showSuccess('Authenticated! Ready to launch browser');
                 document.getElementById('authSection').style.display = 'none';
                 document.getElementById('launchSection').style.display = 'flex';
             });
 
             socket.on('browser-launched', (data) => {
+                console.log(`[BROWSER] Browser launched: ${data.url}`);
                 showSuccess(`Browser launched: ${data.url}`);
                 browserActive = true;
                 document.getElementById('interactionSection').style.display = 'flex';
@@ -556,15 +589,23 @@
             });
 
             socket.on('screenshot', (data) => {
+                console.log('[BROWSER] Screenshot received');
                 const viewport = document.getElementById('viewport');
                 viewport.innerHTML = `<img src="data:image/png;base64,${data.image}" alt="Browser screenshot">`;
             });
 
             socket.on('error', (data) => {
+                console.error('[SOCKET ERROR]', data);
                 showError(`Server error: ${data.message}`);
             });
 
+            socket.on('connect_error', (error) => {
+                console.error('[CONNECTION ERROR]', error);
+                showError(`Connection error: ${error.message}`);
+            });
+
             socket.on('disconnect', () => {
+                console.log('[SOCKET] Disconnected from server');
                 updateStatus(false);
                 browserActive = false;
                 document.getElementById('authSection').style.display = 'flex';
@@ -700,6 +741,8 @@
         }
 
         // Initialize
+        console.log('[PAGE] Insecurly frontend loaded');
+        console.log(`[PAGE] Server URL will be: ${SERVER_URL}`);
         updateStatus(false);
     </script>
 
