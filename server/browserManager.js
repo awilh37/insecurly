@@ -168,6 +168,58 @@ class BrowserManager {
     }
   }
 
+  async keyboard(browserId, type, key, keyCode, ctrlKey, shiftKey, altKey, metaKey) {
+    const browser = this.browsers.get(browserId);
+    if (!browser) {
+      throw new Error('Browser not found');
+    }
+
+    try {
+      const modifiers = [];
+      if (ctrlKey) modifiers.push('Control');
+      if (shiftKey) modifiers.push('Shift');
+      if (altKey) modifiers.push('Alt');
+      if (metaKey) modifiers.push('Meta');
+
+      if (type === 'keydown') {
+        await browser.page.keyboard.down(key);
+      } else if (type === 'keyup') {
+        await browser.page.keyboard.up(key);
+      }
+      browser.lastActivity = new Date();
+    } catch (error) {
+      throw new Error(`Keyboard event failed: ${error.message}`);
+    }
+  }
+
+  async doubleClick(browserId, x, y) {
+    const browser = this.browsers.get(browserId);
+    if (!browser) {
+      throw new Error('Browser not found');
+    }
+
+    try {
+      await browser.page.mouse.dblclick(x, y);
+      browser.lastActivity = new Date();
+    } catch (error) {
+      throw new Error(`Double-click failed: ${error.message}`);
+    }
+  }
+
+  async rightClick(browserId, x, y) {
+    const browser = this.browsers.get(browserId);
+    if (!browser) {
+      throw new Error('Browser not found');
+    }
+
+    try {
+      await browser.page.mouse.click(x, y, { button: 'right' });
+      browser.lastActivity = new Date();
+    } catch (error) {
+      throw new Error(`Right-click failed: ${error.message}`);
+    }
+  }
+
   async screenshot(browserId) {
     const browser = this.browsers.get(browserId);
     if (!browser) {

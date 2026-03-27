@@ -245,6 +245,58 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('keyboard', async (data) => {
+    try {
+      if (!browserId) {
+        socket.emit('error', { message: 'No active browser' });
+        return;
+      }
+
+      const { type, key, keyCode, ctrlKey, shiftKey, altKey, metaKey } = data;
+      await browserManager.keyboard(browserId, type, key, keyCode, ctrlKey, shiftKey, altKey, metaKey);
+      // Don't send screenshot on every keystroke - only on keyup
+      if (type === 'keyup') {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await sendScreenshot(socket, browserId);
+      }
+    } catch (error) {
+      console.error(`Keyboard error: ${error.message}`);
+      socket.emit('error', { message: error.message });
+    }
+  });
+
+  socket.on('dblclick', async (data) => {
+    try {
+      if (!browserId) {
+        socket.emit('error', { message: 'No active browser' });
+        return;
+      }
+
+      const { x, y } = data;
+      await browserManager.doubleClick(browserId, x, y);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await sendScreenshot(socket, browserId);
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
+  socket.on('rightclick', async (data) => {
+    try {
+      if (!browserId) {
+        socket.emit('error', { message: 'No active browser' });
+        return;
+      }
+
+      const { x, y } = data;
+      await browserManager.rightClick(browserId, x, y);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      await sendScreenshot(socket, browserId);
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
   socket.on('disconnect', async () => {
     console.log(`Client disconnected: ${socket.id}`);
     if (browserId) {
