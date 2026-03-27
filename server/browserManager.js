@@ -1,25 +1,33 @@
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright');
 const { v4: uuidv4 } = require('uuid');
 
 class BrowserManager {
   constructor() {
     this.browsers = new Map();
-    this.browserPool = null;
+    this.browserInstance = null;
     this.MAX_BROWSERS = 10;
     this.SCREENSHOT_WIDTH = 1280;
     this.SCREENSHOT_HEIGHT = 720;
   }
 
   async initialize() {
-    if (!this.browserPool) {
-      this.browserPool = await puppeteer.launch({
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage'
-        ]
-      });
+    if (!this.browserInstance) {
+      try {
+        console.log('[BROWSER] Launching Playwright Chromium...');
+        this.browserInstance = await chromium.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+          ]
+        });
+        console.log('[BROWSER] Playwright Chromium launched successfully');
+      } catch (error) {
+        console.error('[BROWSER ERROR] Failed to launch Playwright:', error);
+        throw new Error(`Failed to launch browser: ${error.message}`);
+      }
     }
   }
 
@@ -32,15 +40,20 @@ class BrowserManager {
 
     const browserId = uuidv4();
     try {
-      const page = await this.browserPool.newPage();
-      await page.setViewport({
-        width: this.SCREENSHOT_WIDTH,
-        height: this.SCREENSHOT_HEIGHT
+      const context = await this.browserInstance.newContext({
+        viewport: {
+          width: this.SCREENSHOT_WIDTH,
+          height: this.SCREENSHOT_HEIGHT
+        }
       });
+      
+      const page = await context.newPage();
 
       const browserData = {
         id: browserId,
         sessionId,
+        browser: this.browserInstance,
+        context,
         page,
         url: 'about:blank',
         createdAt: new Date(),
@@ -54,6 +67,7 @@ class BrowserManager {
         await this.navigate(browserId, url);
       }
 
+      console.log(`[BROWSER] Created browser ${browserId} for session ${sessionId}`);
       return browserId;
     } catch (error) {
       throw new Error(`Failed to create browser: ${error.message}`);
@@ -72,9 +86,11 @@ class BrowserManager {
         url = 'https://' + url;
       }
 
-      await browser.page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+      console.log(`[BROWSER] Navigating to ${url}`);
+      await browser.page.goto(url, { waitUntil: 'networkidle' });
       browser.url = url;
       browser.lastActivity = new Date();
+      console.log(`[BROWSER] Navigation complete`);
     } catch (error) {
       throw new Error(`Navigation failed: ${error.message}`);
     }
@@ -87,7 +103,7 @@ class BrowserManager {
     }
 
     try {
-      await browser.page.click({ x, y });
+      await browser.page.mouse.click(x, y);
       browser.lastActivity = new Date();
     } catch (error) {
       throw new Error(`Click failed: ${error.message}`);
@@ -101,7 +117,7 @@ class BrowserManager {
     }
 
     try {
-      await browser.page.type('body', text);
+      await browser.page.keyboard.type(text, { delay: 50 });
       browser.lastActivity = new Date();
     } catch (error) {
       throw new Error(`Type failed: ${error.message}`);
@@ -131,7 +147,7 @@ class BrowserManager {
     }
 
     try {
-      await browser.page.goBack({ waitUntil: 'networkidle2', timeout: 30000 });
+      await browser.page.goBack({ waitUntil: 'networkidle' });
       browser.lastActivity = new Date();
     } catch (error) {
       throw new Error(`Back navigation failed: ${error.message}`);
@@ -145,7 +161,7 @@ class BrowserManager {
     }
 
     try {
-      await browser.page.goForward({ waitUntil: 'networkidle2', timeout: 30000 });
+      await browser.page.goForward({ waitUntil: 'networkidle' });
       browser.lastActivity = new Date();
     } catch (error) {
       throw new Error(`Forward navigation failed: ${error.message}`);
@@ -159,9 +175,9 @@ class BrowserManager {
     }
 
     try {
-      const screenshot = await browser.page.screenshot({ encoding: 'base64' });
+      const screenshot = await browser.page.screenshot();
       browser.lastActivity = new Date();
-      return screenshot;
+      return screenshot.toString('base64');
     } catch (error) {
       throw new Error(`Screenshot failed: ${error.message}`);
     }
@@ -174,8 +190,9 @@ class BrowserManager {
     }
 
     try {
-      await browser.page.close();
+      await browser.context.close();
       this.browsers.delete(browserId);
+      console.log(`[BROWSER] Closed browser ${browserId}`);
     } catch (error) {
       throw new Error(`Failed to close browser: ${error.message}`);
     }
@@ -190,9 +207,10 @@ class BrowserManager {
     }
     await Promise.all(promises);
 
-    if (this.browserPool) {
-      await this.browserPool.close();
-      this.browserPool = null;
+    if (this.browserInstance) {
+      await this.browserInstance.close();
+      this.browserInstance = null;
+      console.log('[BROWSER] All browsers closed');
     }
   }
 }
