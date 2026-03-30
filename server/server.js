@@ -7,6 +7,7 @@ require('dotenv').config();
 const BrowserManager = require('./browserManager');
 const SessionManager = require('./sessionManager');
 const VideoStreamer = require('./videoStreamer');
+const RTPEncoder = require('./rtpEncoder');
 
 const app = express();
 const server = http.createServer(app);
@@ -49,6 +50,9 @@ const PORT = process.env.PORT || 3002;
 const browserManager = new BrowserManager();
 const sessionManager = new SessionManager();
 const videoStreamer = new VideoStreamer();
+
+// RTP encoder pool for each browser stream
+const rtpEncoders = new Map();
 
 // Middleware
 app.use(express.json());
@@ -122,15 +126,39 @@ io.on('connection', (socket) => {
       
       socket.emit('browser-launched', { browserId, url });
       
-      // Start video stream by default
+      // Start video stream by default with RTP encoding
       const browserData = browserManager.browsers.get(browserId);
       if (browserData) {
         try {
+          // Create RTP encoder for this stream
+          const rtpEncoder = new RTPEncoder();
+          rtpEncoders.set(browserId, rtpEncoder);
+
           await videoStreamer.startStream(browserId, browserData.page, (frameData) => {
-            // Send video frames to client
-            socket.emit('video-frame', frameData);
-          });
-          socket.emit('video-started', { browserId });
+            // Handle H.264 encoded frames
+            if (frameData.type === 'h264_frame') {
+              try {
+                // Encode H.264 NAL units into RTP packets
+                const rtpPackets = rtpEncoder.encodeNALUnit(frameData.data, frameData.timestamp, frameData.isKeyframe);
+                
+                // Send RTP packets to client
+                rtpPackets.forEach(packet => {
+                  socket.emit('rtp-packet', {
+                    data: packet,
+                    timestamp: frameData.timestamp,
+                    isKeyframe: frameData.isKeyframe
+                  });
+                });
+              } catch (error) {
+                console.error(`[RTP] Error encoding NAL unit: ${error.message}`);
+              }
+            } else if (frameData.type === 'frame') {
+              // Fall back to raw frame if H.264 fails
+              socket.emit('video-frame', frameData);
+            }
+          }, true); // Enable H.264 encoding
+          
+          socket.emit('video-started', { browserId, codec: 'h264' });
         } catch (error) {
           console.error(`[VIDEO] Failed to start stream: ${error.message}`);
           // Fall back to screenshots
@@ -277,15 +305,43 @@ io.on('connection', (socket) => {
         case 'start':
           const browserData = browserManager.browsers.get(browserId);
           if (browserData) {
+            // Create RTP encoder if needed
+            if (!rtpEncoders.has(browserId)) {
+              const rtpEncoder = new RTPEncoder();
+              rtpEncoders.set(browserId, rtpEncoder);
+            }
+
             await videoStreamer.startStream(browserId, browserData.page, (frameData) => {
-              socket.emit('video-frame', frameData);
-            });
+              if (frameData.type === 'h264_frame') {
+                const rtpEncoder = rtpEncoders.get(browserId);
+                if (rtpEncoder) {
+                  const rtpPackets = rtpEncoder.encodeNALUnit(frameData.data, frameData.timestamp, frameData.isKeyframe);
+                  rtpPackets.forEach(packet => {
+                    socket.emit('rtp-packet', {
+                      data: packet,
+                      timestamp: frameData.timestamp,
+                      isKeyframe: frameData.isKeyframe
+                    });
+                  });
+                }
+              } else {
+                socket.emit('video-frame', frameData);
+              }
+            }, true);
           }
           break;
         case 'stop':
           videoStreamer.stopStream(browserId);
+          if (rtpEncoders.has(browserId)) {
+            rtpEncoders.delete(browserId);
+          }
           break;
         case 'stats':
+          // Include RTP stats if available
+          const rtpEncoder = rtpEncoders.get(browserId);
+          if (rtpEncoder && stats) {
+            stats.rtp = rtpEncoder.getStats();
+          }
           socket.emit('video-stats', stats);
           break;
       }
@@ -351,6 +407,10 @@ io.on('connection', (socket) => {
     if (browserId) {
       try {
         videoStreamer.stopStream(browserId);
+        // Clean up RTP encoder
+        if (rtpEncoders.has(browserId)) {
+          rtpEncoders.delete(browserId);
+        }
         await browserManager.closeBrowser(browserId);
       } catch (error) {
         console.error(`Error closing browser on disconnect: ${error.message}`);

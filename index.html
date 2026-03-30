@@ -512,6 +512,7 @@
     </div>
 
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="lib/h264Decoder.js"></script>
     <script>
         const SERVER_URL = (() => {
             const hostname = window.location.hostname;
@@ -535,6 +536,8 @@
         let isConnected = false;
         let browserActive = false;
         let token = null;
+        let h264Decoder = null;
+        let videoCanvas = null;
 
         function updateStatus(connected) {
             isConnected = connected;
@@ -625,12 +628,47 @@
             });
 
             socket.on('video-started', (data) => {
-                console.log(`[VIDEO] Video stream started: ${data.browserId}`);
+                console.log(`[VIDEO] Video stream started: ${data.browserId}, codec: ${data.codec}`);
+                
+                if (data.codec === 'h264') {
+                  // Initialize H.264 decoder for RTP stream
+                  const wrapper = document.getElementById('viewport-wrapper');
+                  
+                  // Create canvas for H.264 rendering
+                  if (!videoCanvas) {
+                    videoCanvas = document.createElement('canvas');
+                    videoCanvas.width = 1280;
+                    videoCanvas.height = 720;
+                    videoCanvas.style.display = 'block';
+                    videoCanvas.style.userSelect = 'none';
+                    videoCanvas.onclick = (e) => handleViewportClick(e, videoCanvas);
+                    wrapper.innerHTML = '';
+                    wrapper.appendChild(videoCanvas);
+                  }
+                  
+                  // Initialize decoder if not already done
+                  if (!h264Decoder) {
+                    h264Decoder = new H264Decoder(videoCanvas);
+                    console.log('[H264] Decoder initialized for RTP packets');
+                  }
+                }
+                
                 showSuccess('Video streaming activated');
             });
 
+            socket.on('rtp-packet', (data) => {
+                // Decode H.264 RTP packets
+                if (h264Decoder && data) {
+                  try {
+                    h264Decoder.decodeRTPPacket(data);
+                  } catch (error) {
+                    console.error('[H264] RTP packet decode error:', error.message);
+                  }
+                }
+            });
+
             socket.on('video-frame', (data) => {
-                // Display video frames as they arrive
+                // Display video frames as they arrive (fallback if H.264 fails)
                 const viewport = document.getElementById('viewport');
                 const wrapper = document.getElementById('viewport-wrapper');
                 
