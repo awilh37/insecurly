@@ -21,6 +21,7 @@ class FrameEncoder {
     this.frameBuffer = [];
     this.frameCount = 0;
     this.keyframeInterval = 30; // Insert keyframe every 30 frames
+    this.firstKeyframeGenerated = false; // Track if initial keyframe sent
     this.onEncodedFrame = null;
     this.stats = {
       framesEncoded: 0,
@@ -43,6 +44,7 @@ class FrameEncoder {
 
     try {
       this.stats.startTime = Date.now();
+      this.firstKeyframeGenerated = false; // Reset for new encoding session
       const args = [
         '-f', 'image2pipe',
         '-vcodec', 'png',
@@ -52,7 +54,9 @@ class FrameEncoder {
         '-preset', this.preset,
         '-tune', this.tune,
         '-bitrate', this.bitrate,
-        '-g', String(this.keyframeInterval), // Keyframe interval
+        '-g', String(this.keyframeInterval), // Keyframe interval (every 30 frames)
+        '-keyint_min', String(this.keyframeInterval), // Minimum keyframe interval
+        '-force_key_frames', `expr:gte(t,n_forced*${1/this.fps})`, // Force keyframe at start
         '-f', 'h264',
         '-',
       ];
@@ -174,13 +178,31 @@ class FrameEncoder {
   /**
    * Detect if this H.264 NAL unit is a keyframe (IDR)
    * IDR (Instantaneous Decoder Refresh) NAL type = 5
+   * H.264 streams can have start codes: 0x000001 or 0x00000001
    * @private
    */
   _isKeyframe(data) {
     if (data.length < 1) return false;
-    // NAL type is in the lower 5 bits of first byte (after start code)
-    const nalUnit = data[0] & 0x1f;
-    return nalUnit === 5; // IDR frame
+    
+    let offset = 0;
+    
+    // Skip start code (0x00 0x00 0x01 or 0x00 0x00 0x00 0x01)
+    if (data.length >= 3 && data[0] === 0x00 && data[1] === 0x00) {
+      if (data[2] === 0x01) {
+        offset = 3;
+      } else if (data[2] === 0x00 && data.length >= 4 && data[3] === 0x01) {
+        offset = 4;
+      }
+    }
+    
+    if (offset >= data.length) return false;
+    
+    // NAL type is in the lower 5 bits of the NAL header byte
+    const nalHeader = data[offset];
+    const nalType = nalHeader & 0x1f;
+    
+    console.log(`[H264] NAL type: ${nalType} (keyframe: ${nalType === 5})`);
+    return nalType === 5; // IDR frame
   }
 
   /**
