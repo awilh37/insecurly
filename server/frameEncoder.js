@@ -187,12 +187,14 @@ class FrameEncoder {
     let offset = 0;
     
     // Skip start code (0x00 0x00 0x01 or 0x00 0x00 0x00 0x01)
-    if (data.length >= 3 && data[0] === 0x00 && data[1] === 0x00) {
-      if (data[2] === 0x01) {
-        offset = 3;
-      } else if (data[2] === 0x00 && data.length >= 4 && data[3] === 0x01) {
-        offset = 4;
-      }
+    // Most common: 0x00 0x00 0x00 0x01 (4 bytes)
+    if (data.length >= 4 && data[0] === 0x00 && data[1] === 0x00 && data[2] === 0x00 && data[3] === 0x01) {
+      offset = 4;
+    } else if (data.length >= 3 && data[0] === 0x00 && data[1] === 0x00 && data[2] === 0x01) {
+      offset = 3;
+    } else {
+      // No start code, data likely starts with NAL header
+      offset = 0;
     }
     
     if (offset >= data.length) return false;
@@ -201,8 +203,12 @@ class FrameEncoder {
     const nalHeader = data[offset];
     const nalType = nalHeader & 0x1f;
     
-    console.log(`[H264] NAL type: ${nalType} (keyframe: ${nalType === 5})`);
-    return nalType === 5; // IDR frame
+    // Log every NAL type for debugging
+    const isKeyframe = nalType === 5;
+    if (nalType !== 1) { // Log all but slice data (type 1) to reduce spam
+      console.log(`[H264] NAL type: ${nalType} at offset ${offset} (keyframe: ${isKeyframe}) bytes: [${Array.from(data.slice(0, 8)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}]`);
+    }
+    return isKeyframe;
   }
 
   /**
