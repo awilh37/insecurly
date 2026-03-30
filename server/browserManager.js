@@ -131,9 +131,9 @@ class BrowserManager {
     }
 
     try {
-      await browser.page.evaluate((scrollX, scrollY) => {
+      await browser.page.evaluate(({ scrollX, scrollY }) => {
         window.scrollBy(scrollX, scrollY);
-      }, x, y);
+      }, { scrollX: x, scrollY: y });
       browser.lastActivity = new Date();
     } catch (error) {
       throw new Error(`Scroll failed: ${error.message}`);
