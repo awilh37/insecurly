@@ -6,6 +6,7 @@ require('dotenv').config();
 
 const BrowserManager = require('./browserManager');
 const SessionManager = require('./sessionManager');
+const VideoStreamer = require('./videoStreamer');
 
 const app = express();
 const server = http.createServer(app);
@@ -47,6 +48,7 @@ const io = socketIo(server, {
 const PORT = process.env.PORT || 3002;
 const browserManager = new BrowserManager();
 const sessionManager = new SessionManager();
+const videoStreamer = new VideoStreamer();
 
 // Middleware
 app.use(express.json());
@@ -119,7 +121,22 @@ io.on('connection', (socket) => {
       browserId = await browserManager.createBrowser(sessionId, url);
       
       socket.emit('browser-launched', { browserId, url });
-      await sendScreenshot(socket, browserId);
+      
+      // Start video stream by default
+      const browserData = browserManager.browsers.get(browserId);
+      if (browserData) {
+        try {
+          await videoStreamer.startStream(browserId, browserData.page, (frameData) => {
+            // Send video frames to client
+            socket.emit('video-frame', frameData);
+          });
+          socket.emit('video-started', { browserId });
+        } catch (error) {
+          console.error(`[VIDEO] Failed to start stream: ${error.message}`);
+          // Fall back to screenshots
+          await sendScreenshot(socket, browserId);
+        }
+      }
     } catch (error) {
       socket.emit('error', { message: error.message });
     }
@@ -236,9 +253,41 @@ io.on('connection', (socket) => {
   socket.on('close-browser', async () => {
     try {
       if (browserId) {
+        videoStreamer.stopStream(browserId);
         await browserManager.closeBrowser(browserId);
         browserId = null;
         socket.emit('browser-closed');
+      }
+    } catch (error) {
+      socket.emit('error', { message: error.message });
+    }
+  });
+
+  socket.on('video-control', async (data) => {
+    try {
+      if (!browserId) {
+        socket.emit('error', { message: 'No active browser' });
+        return;
+      }
+
+      const { action } = data;
+      const stats = videoStreamer.getStreamStats(browserId);
+
+      switch (action) {
+        case 'start':
+          const browserData = browserManager.browsers.get(browserId);
+          if (browserData) {
+            await videoStreamer.startStream(browserId, browserData.page, (frameData) => {
+              socket.emit('video-frame', frameData);
+            });
+          }
+          break;
+        case 'stop':
+          videoStreamer.stopStream(browserId);
+          break;
+        case 'stats':
+          socket.emit('video-stats', stats);
+          break;
       }
     } catch (error) {
       socket.emit('error', { message: error.message });
@@ -301,6 +350,7 @@ io.on('connection', (socket) => {
     console.log(`Client disconnected: ${socket.id}`);
     if (browserId) {
       try {
+        videoStreamer.stopStream(browserId);
         await browserManager.closeBrowser(browserId);
       } catch (error) {
         console.error(`Error closing browser on disconnect: ${error.message}`);
