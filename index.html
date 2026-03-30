@@ -624,8 +624,39 @@
                 document.getElementById('addressBar').value = data.url;
             });
 
+            socket.on('video-started', (data) => {
+                console.log(`[VIDEO] Video stream started: ${data.browserId}`);
+                showSuccess('Video streaming activated');
+            });
+
+            socket.on('video-frame', (data) => {
+                // Display video frames as they arrive
+                const viewport = document.getElementById('viewport');
+                const wrapper = document.getElementById('viewport-wrapper');
+                
+                // Create or update image
+                let img = wrapper.querySelector('img');
+                if (!img) {
+                    img = document.createElement('img');
+                    img.style.display = 'block';
+                    img.style.userSelect = 'none';
+                    wrapper.innerHTML = '';
+                    wrapper.appendChild(img);
+                }
+                img.src = `data:image/png;base64,${data.data}`;
+                
+                // Attach click handler to image
+                img.onclick = (e) => handleViewportClick(e, img);
+            });
+
+            socket.on('video-stats', (stats) => {
+                if (stats) {
+                    console.log(`[VIDEO] Stats: ${stats.frameCount} frames, ${stats.actualFps} FPS`);
+                }
+            });
+
             socket.on('screenshot', (data) => {
-                console.log('[BROWSER] Screenshot received');
+                console.log('[BROWSER] Screenshot received (fallback)');
                 const viewport = document.getElementById('viewport');
                 const wrapper = document.getElementById('viewport-wrapper');
                 
